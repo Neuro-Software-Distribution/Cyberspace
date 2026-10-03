@@ -24,4 +24,6 @@ void handle_delete(TLSClient *client, sqlite3 *db, const char *path, const char 
 
 void handle_folder(TLSClient *client, sqlite3 *db, const char *path, const char *body);
 
+void send_todos_json(TLSClient *client, sqlite3 *db, const char *path, const char *body);
+
 #endif

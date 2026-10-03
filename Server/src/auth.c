@@ -411,7 +411,8 @@ int auth_handle(TLSClient *client, const char *method, const char *path, const c
     }
     
     if (session < 0) {
-        reply(client, get ? 303 : 401, "application/json", get ? "Location: /login\r\n" : "", "{\"error\":\"Please sign in.\"}"); return(1);
+        int redirect = get && strncmp(path, "/api/", 5);
+        reply(client, redirect ? 303 : 401, "application/json", redirect ? "Location: /login\r\n" : "", "{\"error\":\"Please sign in.\"}"); return(1);
     }
     
     client->user_id = sessions[session].user_id;

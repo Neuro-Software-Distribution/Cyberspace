@@ -140,6 +140,8 @@ int main(void)
         route("GET",  "/favicon.svg", send_favicon) < 0 ||
         route("GET",  "/favicon.png", send_favicon) < 0 ||
         route("GET",  "/favicon.ico", send_favicon) < 0 ||
+        route("GET",  "/api/todos", send_todos_json) < 0 ||
+        route("GET",  "/api/todos/*", send_todos_json) < 0 ||
         route("GET",  "/todos/*", send_todo_page) < 0 ||
         route("POST", "/",        handle_post) < 0 ||
         route("POST", "/folders", handle_folder) < 0 ||

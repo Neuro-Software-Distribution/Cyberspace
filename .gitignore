@@ -42,3 +42,5 @@ __pycache__/
 # Account databases and SQLite sidecars
 users.db
 users.db-*
+
+/CLI-Client/cyberspace

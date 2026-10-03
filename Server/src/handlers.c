@@ -775,3 +775,64 @@ void handle_folder(TLSClient *client, sqlite3 *db, const char *path, const char 
     if (!sqlite3_changes(db)) { send_request_error(client, 404); return; }
     send_redirect(client, "/");
 }
+
+static void write_json_string(FILE *stream, const unsigned char *value)
+{
+    fputc('"', stream);
+    for (; value && *value; value++) {
+        if (*value == '"' || *value == '\\') fprintf(stream, "\\%c", *value);
+        else if (*value < 32) fprintf(stream, "\\u%04x", *value);
+        else fputc(*value, stream);
+    }
+    fputc('"', stream);
+}
+
+void send_todos_json(TLSClient *client, sqlite3 *db, const char *path, const char *body)
+{
+    (void)body;
+    int id = 0;
+    int single = strcmp(path, "/api/todos") != 0;
+    if (single && (strncmp(path, "/api/todos/", 11) || !folder_number(path + 11, &id) || !id)) {
+        send_http_response(client, 400, "application/json", "{\"error\":\"Invalid todo id\"}");
+        return;
+    }
+    sqlite3_stmt *stmt = NULL;
+    if (!db || sqlite3_prepare_v2(db,
+        "SELECT t.ID, t.Title, t.Content, t.Completed, t.CreatedAt, t.FolderId, f.Name "
+        "FROM TODOS t LEFT JOIN FOLDERS f ON f.ID = t.FolderId AND f.UserId = t.UserId "
+        "WHERE t.UserId = ? AND (? = 0 OR t.ID = ?) ORDER BY t.CreatedAt DESC, t.ID DESC",
+        -1, &stmt, NULL) != SQLITE_OK) {
+        send_http_response(client, 500, "application/json", "{\"error\":\"Could not read todos\"}");
+        return;
+    }
+    sqlite3_bind_int64(stmt, 1, client->user_id);
+    sqlite3_bind_int(stmt, 2, id);
+    sqlite3_bind_int(stmt, 3, id);
+    char *json = NULL;
+    size_t length = 0;
+    FILE *stream = open_memstream(&json, &length);
+    if (!stream) { sqlite3_finalize(stmt); send_request_error(client, 500); return; }
+    if (!single) fputs("{\"todos\":[", stream);
+    int count = 0, rc;
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        if (count++) fputc(',', stream);
+        fprintf(stream, "{\"id\":%lld,\"title\":", sqlite3_column_int64(stmt, 0));
+        write_json_string(stream, sqlite3_column_text(stmt, 1));
+        fputs(",\"content\":", stream);
+        write_json_string(stream, sqlite3_column_text(stmt, 2));
+        fprintf(stream, ",\"completed\":%s,\"created_at\":%lld,\"folder_id\":%lld,\"folder_name\":",
+            sqlite3_column_int(stmt, 3) ? "true" : "false",
+            sqlite3_column_int64(stmt, 4), sqlite3_column_int64(stmt, 5));
+        if (sqlite3_column_type(stmt, 6) == SQLITE_NULL) fputs("null", stream);
+        else write_json_string(stream, sqlite3_column_text(stmt, 6));
+        fputc('}', stream);
+    }
+    if (!single) fputs("]}", stream);
+    int failed = ferror(stream);
+    if (fclose(stream)) failed = 1;
+    sqlite3_finalize(stmt);
+    if (failed || rc != SQLITE_DONE) send_http_response(client, 500, "application/json", "{\"error\":\"Could not read todos\"}");
+    else if (single && !count) send_http_response(client, 404, "application/json", "{\"error\":\"Todo not found\"}");
+    else send_http_response(client, 200, "application/json; charset=utf-8", json);
+    free(json);
+}
