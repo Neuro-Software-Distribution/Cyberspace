@@ -38,6 +38,8 @@ run: $(TARGET)
 	./$(TARGET)
 
 test:
+	python3 scripts/test-folders.py
+	node scripts/test-folders-ui.js
 	python3 scripts/test-markdown.py
 	node scripts/test-navigation-ui.js
 	python3 scripts/test-jukebox.py

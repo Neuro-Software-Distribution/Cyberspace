@@ -43,16 +43,24 @@ sqlite3 *set_db(void)
 
     /* Old single-user data belongs to account 1, including local-mode data. */
     sqlite3_stmt *columns = NULL;
-    int has_owner = 0;
+    int has_owner = 0, has_folder = 0;
     if (sqlite3_prepare_v2(database, "PRAGMA table_info(TODOS)", -1, &columns, NULL) != SQLITE_OK) {
         sqlite3_close(database); return(NULL);
     }
     while (sqlite3_step(columns) == SQLITE_ROW) {
+        if (!strcmp((const char *)sqlite3_column_text(columns, 1), "FolderId")) { has_folder = 1; }
         if (!strcmp((const char *)sqlite3_column_text(columns, 1), "UserId")) { has_owner = 1; }
     }
     sqlite3_finalize(columns);
     if ((!has_owner && sqlite3_exec(database, "ALTER TABLE TODOS ADD COLUMN UserId INTEGER NOT NULL DEFAULT 1", NULL, NULL, NULL) != SQLITE_OK) ||
         sqlite3_exec(database, "CREATE INDEX IF NOT EXISTS todos_owner ON TODOS(UserId, CreatedAt)", NULL, NULL, NULL) != SQLITE_OK) {
+        sqlite3_close(database); return(NULL);
+    }
+    if ((!has_folder && sqlite3_exec(database, "ALTER TABLE TODOS ADD COLUMN FolderId INTEGER NOT NULL DEFAULT 0", NULL, NULL, NULL) != SQLITE_OK) ||
+        sqlite3_exec(database,
+            "CREATE TABLE IF NOT EXISTS FOLDERS (ID INTEGER PRIMARY KEY AUTOINCREMENT, UserId INTEGER NOT NULL, Name TEXT NOT NULL);"
+            "CREATE INDEX IF NOT EXISTS folders_owner ON FOLDERS(UserId);"
+            "CREATE INDEX IF NOT EXISTS todos_folder ON TODOS(UserId, FolderId);", NULL, NULL, NULL) != SQLITE_OK) {
         sqlite3_close(database); return(NULL);
     }
     return(database);
@@ -174,7 +182,12 @@ enum STATUS get_todo(sqlite3 *db, sqlite3_int64 user_id, int id, struct todo_dat
 
 enum STATUS foreach_todo(sqlite3 *db, sqlite3_int64 user_id, todo_callback cb, void *userdata)
 {
-    const char *sql = "SELECT ID, Title, Content, Completed, CreatedAt FROM TODOS WHERE UserId = ? ORDER BY CreatedAt DESC;";
+    return foreach_folder_todo(db, user_id, -1, cb, userdata);
+}
+
+enum STATUS foreach_folder_todo(sqlite3 *db, sqlite3_int64 user_id, int folder_id, todo_callback cb, void *userdata)
+{
+    const char *sql = "SELECT ID, Title, Content, Completed, CreatedAt FROM TODOS WHERE UserId = ? AND (? < 0 OR FolderId = ?) ORDER BY CreatedAt DESC, ID DESC;";
     sqlite3_stmt *stmt = NULL;
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
@@ -182,7 +195,10 @@ enum STATUS foreach_todo(sqlite3 *db, sqlite3_int64 user_id, todo_callback cb, v
     }
 
     sqlite3_bind_int64(stmt, 1, user_id);
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    sqlite3_bind_int(stmt, 2, folder_id);
+    sqlite3_bind_int(stmt, 3, folder_id);
+    int rc;
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
         struct todo_data t = {0};
         t.id         = sqlite3_column_int(stmt, 0);
         t.title      = (char *)sqlite3_column_text(stmt, 1);   
@@ -194,5 +210,5 @@ enum STATUS foreach_todo(sqlite3 *db, sqlite3_int64 user_id, todo_callback cb, v
     }
 
     sqlite3_finalize(stmt);
-    return(OK);
+    return(rc == SQLITE_DONE ? OK : U_FUCKED);
 }

@@ -17,5 +17,6 @@ enum STATUS update_todo(sqlite3 *db, sqlite3_int64 user_id, int id, const char *
 enum STATUS set_todo_completed(sqlite3 *db, sqlite3_int64 user_id, int id, int completed);
 enum STATUS get_todo(sqlite3 *db, sqlite3_int64 user_id, int id, struct todo_data *out);
 enum STATUS foreach_todo(sqlite3 *db, sqlite3_int64 user_id, todo_callback cb, void *userdata);
-        
+enum STATUS foreach_folder_todo(sqlite3 *db, sqlite3_int64 user_id, int folder_id, todo_callback cb, void *userdata);
+
 #endif

@@ -852,3 +852,42 @@ body:has(.music-controls) { padding-bottom: calc(112px + env(safe-area-inset-bot
 
 /* Leave breathing room when following a Markdown heading link. */
 .markdown-body :is(h1, h2, h3, h4, h5, h6)[id] { scroll-margin-top: 1rem; }
+
+.folder-create { margin-bottom: 18px; }
+.folder-create label, .folder-hint { color: var(--muted); font-size: 0.85rem; }
+.folder-root {
+    padding: 14px 18px;
+    margin-bottom: 16px;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    color: var(--purple);
+}
+.folder-root span { color: var(--muted); margin-left: 12px; font-size: 0.8rem; }
+.folder-card { border-top: 2px solid var(--purple) !important; }
+.folder-card summary { cursor: pointer; color: var(--purple); padding: 4px 0; }
+.folder-name { font-weight: bold; }
+.folder-count { color: var(--muted); font-size: 0.8rem; margin-left: 16px; }
+.folder-todos { margin-top: 20px; }
+.todo-list > .todo-item > a { margin-right: 0; padding-right: 0; }
+.todo-item[draggable] { cursor: grab; flex-wrap: wrap; }
+.todo-move { display: flex; align-items: center; gap: 8px; max-width: 100%; }
+.todo-move select {
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--muted);
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    width: 130px;
+    min-width: 0;
+}
+.todo-move button { padding: 8px 10px; font-size: 0.8rem; }
+.is-dragging { opacity: 0.45; }
+.is-drop-target { border-color: var(--green) !important; box-shadow: var(--glow); background: #18231e !important; }
+@media (max-width: 600px) {
+    .todo-move { flex-basis: 100%; justify-content: flex-end; }
+    .todo-move select { flex: 1; }
+    .folder-todos > .todo-item { padding: 14px; }
+    .folder-count { display: inline-block; }
+}

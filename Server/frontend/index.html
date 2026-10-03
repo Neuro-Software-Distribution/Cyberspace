@@ -15,6 +15,7 @@
     <script src="/jukebox.js" defer></script>
     <script src="/editor.js" defer></script>
     <script src="/navigation.js" defer></script>
+    <script src="/folders.js" defer></script>
 </head>
 <body>
     <button class="site-intro" type="button" aria-label="Skip opening animation" hidden>
@@ -42,6 +43,15 @@
         </section>
         <section class="todos-section" aria-labelledby="todos-heading">
             <h2 id="todos-heading">// Pick your daily poision</h2>
+            <form class="folder-create" action="/folders" method="POST">
+                <label for="folder-name">// give the chaos a directory</label>
+                <div class="create-controls">
+                    <input id="folder-name" name="name" type="text" maxlength="120" placeholder="Folder name..." required>
+                    <button type="submit">mkdir()</button>
+                </div>
+            </form>
+            <p class="folder-hint">Drag todos into a folder, or use mv(). Open a folder to see its shit.</p>
+            <div class="folder-root" data-folder-id="0">../ index <span>drop here to ungroup</span></div>
             <ul class="todo-list">{{ todo_list }}</ul>
         </section>
     </main>

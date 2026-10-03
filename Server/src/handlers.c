@@ -282,6 +282,7 @@ struct todo_list {
     FILE *stream;
     size_t count;
     int failed;
+    const char *folder_options;
 };
 
 static void append_todo_link(struct todo_data *todo, void *userdata)
@@ -298,17 +299,22 @@ static void append_todo_link(struct todo_data *todo, void *userdata)
     }
     
     if (fprintf(list->stream,
-                "<li class=\"todo-item\"><form class=\"todo-toggle\" action=\"/complete\" method=\"POST\">"
+                "<li class=\"todo-item\" draggable=\"true\" data-todo-id=\"%d\"><form class=\"todo-toggle\" action=\"/complete\" method=\"POST\">"
                 "<input type=\"hidden\" name=\"id\" value=\"%d\">"
                 "<input type=\"hidden\" name=\"completed\" value=\"%d\">"
                 "<input type=\"hidden\" name=\"return_to\" value=\"home\">"
                 "<button type=\"submit\" class=\"binary-box%s\" data-value=\"%d\" "
                 "aria-label=\"%s: %s\" title=\"%s\"></button></form>"
-                "<a href=\"/todos/%d\"><span class=\"todo-text\">%s</span></a></li>\n",
-                todo->id, todo->is_done ? 0 : 1, todo->is_done ? " is-done" : "",
+                "<a href=\"/todos/%d\"><span class=\"todo-text\">%s</span></a>"
+                "<form class=\"todo-move\" action=\"/folders/move\" method=\"POST\">"
+                "<input type=\"hidden\" name=\"id\" value=\"%d\">"
+                "<select name=\"folder_id\" aria-label=\"Move %s to folder\" required>"
+                "<option value=\"\" disabled selected>Move to…</option>%s</select>"
+                "<button type=\"submit\">mv()</button></form></li>\n",
+                todo->id, todo->id, todo->is_done ? 0 : 1, todo->is_done ? " is-done" : "",
                 todo->is_done ? 1 : 0, todo->is_done ? "Mark as pending" : "Mark as done",
                 title, todo->is_done ? "Mark as pending" : "Mark as done",
-                todo->id, title) < 0) {
+                todo->id, title, todo->id, title, list->folder_options) < 0) {
         list->failed = 1;
     }
     
@@ -337,9 +343,51 @@ void send_homepage(TLSClient *client, sqlite3 *db, const char *path, const char 
         return;
     }
     
-    struct todo_list list = {.stream = stream};
-    
-    enum STATUS status = foreach_todo(db, client->user_id, append_todo_link, &list);
+    char *options = NULL;
+    size_t options_length = 0;
+    FILE *option_stream = open_memstream(&options, &options_length);
+    sqlite3_stmt *folders = NULL;
+    int failed = !option_stream || sqlite3_prepare_v2(db,
+        "SELECT ID, Name, (SELECT COUNT(*) FROM TODOS WHERE UserId = FOLDERS.UserId AND FolderId = FOLDERS.ID) "
+        "FROM FOLDERS WHERE UserId = ? ORDER BY ID DESC", -1, &folders, NULL) != SQLITE_OK;
+    if (!failed) {
+        sqlite3_bind_int64(folders, 1, client->user_id);
+        if (fprintf(option_stream, "<option value=\"0\">// index</option>") < 0) failed = 1;
+        int rc;
+        while ((rc = sqlite3_step(folders)) == SQLITE_ROW) {
+            char *name = escape_html((const char *)sqlite3_column_text(folders, 1));
+            if (!name || fprintf(option_stream, "<option value=\"%d\">%s</option>",
+                sqlite3_column_int(folders, 0), name) < 0) failed = 1;
+            free(name);
+        }
+        if (rc != SQLITE_DONE) failed = 1;
+    }
+    if (option_stream && fclose(option_stream)) failed = 1;
+    struct todo_list list = {.stream = stream, .folder_options = options, .failed = failed};
+    enum STATUS status = U_FUCKED;
+    if (!failed) {
+        sqlite3_reset(folders);
+        int rc;
+        while ((rc = sqlite3_step(folders)) == SQLITE_ROW) {
+            int id = sqlite3_column_int(folders, 0);
+            char *name = escape_html((const char *)sqlite3_column_text(folders, 1));
+            if (!name || fprintf(stream,
+                "<li class=\"folder-card\" data-folder-id=\"%d\"><details><summary>"
+                "<span class=\"folder-name\">%s/</span><span class=\"folder-count\">%d todos</span>"
+                "</summary><ul class=\"todo-list folder-todos\">", id, name,
+                sqlite3_column_int(folders, 2)) < 0) list.failed = 1;
+            free(name);
+            size_t before = list.count;
+            if (foreach_folder_todo(db, client->user_id, id, append_todo_link, &list) != OK) list.failed = 1;
+            if (list.count == before && fprintf(stream, "<li class=\"folder-empty\">Drop some chaos here.</li>") < 0) list.failed = 1;
+            if (fprintf(stream, "</ul></details></li>") < 0) list.failed = 1;
+            list.count++;
+        }
+        if (rc != SQLITE_DONE) list.failed = 1;
+        status = foreach_folder_todo(db, client->user_id, 0, append_todo_link, &list);
+    }
+    sqlite3_finalize(folders);
+    free(options);
     
     if (!list.count && fprintf(stream, "<li>No todos yet.</li>") < 0) {
         list.failed = 1;
@@ -674,5 +722,56 @@ void handle_delete(TLSClient *client, sqlite3 *db, const char *path, const char 
         return;
     }
 
+    send_redirect(client, "/");
+}
+
+static int folder_number(const char *text, int *out)
+{
+    if (!*text || strspn(text, "0123456789") != strlen(text)) return 0;
+    errno = 0;
+    long value = strtol(text, NULL, 10);
+    if (errno == ERANGE || value > INT_MAX) return 0;
+    *out = (int)value;
+    return 1;
+}
+
+void handle_folder(TLSClient *client, sqlite3 *db, const char *path, const char *body)
+{
+    if (!db) { send_request_error(client, 500); return; }
+    sqlite3_stmt *stmt = NULL;
+    if (!strcmp(path, "/folders")) {
+        char name[1024];
+        if (form_field(body, "name", name, sizeof(name)) != 1 ||
+            !name[0] || strlen(name) > 120 || strspn(name, " \t\r\n") == strlen(name)) {
+            send_request_error(client, 400); return;
+        }
+        if (sqlite3_prepare_v2(db, "INSERT INTO FOLDERS (UserId, Name) VALUES (?, ?)", -1, &stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_int64(stmt, 1, client->user_id);
+            sqlite3_bind_text(stmt, 2, name, -1, SQLITE_TRANSIENT);
+        }
+    } else {
+        char id_text[64], folder_text[64];
+        int id, folder;
+        if (form_field(body, "id", id_text, sizeof(id_text)) != 1 ||
+            form_field(body, "folder_id", folder_text, sizeof(folder_text)) != 1 ||
+            !folder_number(id_text, &id) || !id || !folder_number(folder_text, &folder)) {
+            send_request_error(client, 400); return;
+        }
+        if (sqlite3_prepare_v2(db,
+            "UPDATE TODOS SET FolderId = ? WHERE ID = ? AND UserId = ? AND "
+            "(? = 0 OR EXISTS (SELECT 1 FROM FOLDERS WHERE ID = ? AND UserId = ?))",
+            -1, &stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, folder);
+            sqlite3_bind_int(stmt, 2, id);
+            sqlite3_bind_int64(stmt, 3, client->user_id);
+            sqlite3_bind_int(stmt, 4, folder);
+            sqlite3_bind_int(stmt, 5, folder);
+            sqlite3_bind_int64(stmt, 6, client->user_id);
+        }
+    }
+    int rc = stmt ? sqlite3_step(stmt) : SQLITE_ERROR;
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) { send_request_error(client, 500); return; }
+    if (!sqlite3_changes(db)) { send_request_error(client, 404); return; }
     send_redirect(client, "/");
 }

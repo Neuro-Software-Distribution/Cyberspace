@@ -22,4 +22,6 @@ void handle_update(TLSClient *client, sqlite3 *db, const char *path, const char 
 void handle_complete(TLSClient *client, sqlite3 *db, const char *path, const char *body);
 void handle_delete(TLSClient *client, sqlite3 *db, const char *path, const char *body);
 
+void handle_folder(TLSClient *client, sqlite3 *db, const char *path, const char *body);
+
 #endif

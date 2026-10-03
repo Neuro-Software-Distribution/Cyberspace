@@ -105,7 +105,7 @@
         } catch (error) {
             if (!pendingPop) {
                 status.textContent = body
-                    ? 'Could not confirm the save. Reopen the todo or home page to check before submitting again.'
+                    ? 'Could not confirm the save. Reopen the home page or todo to check before submitting again.'
                     : 'Could not load that page. Check your connection and try the link again.';
                 console.warn('Page navigation failed', error);
                 if (pop) history.replaceState({ scrollY: previousScroll }, '', displayedUrl);
@@ -150,7 +150,7 @@
         const method = submitter?.getAttribute('formmethod') || form.method;
         const target = submitter?.getAttribute('formtarget') || form.target;
         if (url.origin !== window.location.origin || method.toLowerCase() !== 'post' ||
-            (target && target !== '_self') || !['/', '/complete', '/update', '/delete'].includes(url.pathname)) return;
+            (target && target !== '_self') || !['/', '/complete', '/update', '/delete', '/folders', '/folders/move'].includes(url.pathname)) return;
         event.preventDefault();
         if (busy) return;
         const data = new FormData(form);

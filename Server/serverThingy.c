@@ -142,6 +142,8 @@ int main(void)
         route("GET",  "/favicon.ico", send_favicon) < 0 ||
         route("GET",  "/todos/*", send_todo_page) < 0 ||
         route("POST", "/",        handle_post) < 0 ||
+        route("POST", "/folders", handle_folder) < 0 ||
+        route("POST", "/folders/move", handle_folder) < 0 ||
         route("POST", "/complete", handle_complete) < 0 ||
         route("POST", "/update",  handle_update) < 0 || /*Longest if statement I've ever written so far*/
         route("POST", "/delete",  handle_delete) < 0) { goto rome; } 
